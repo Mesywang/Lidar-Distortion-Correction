@@ -21,22 +21,20 @@ pcl::visualization::CloudViewer g_PointCloudView("PointCloud View");
 class LidarMotionCalibrator
 {
 public:
-
-    LidarMotionCalibrator(tf::TransformListener* tf)
+    LidarMotionCalibrator(tf::TransformListener *tf)
     {
         tf_ = tf;
         scan_sub_ = nh_.subscribe("champion_scan", 10, &LidarMotionCalibrator::ScanCallBack, this);
     }
 
-
     ~LidarMotionCalibrator()
     {
-        if(tf_!=NULL)
+        if (tf_ != NULL)
             delete tf_;
     }
 
     // 拿到原始的激光数据来进行处理
-    void ScanCallBack(const champion_nav_msgs::ChampionNavLaserScanPtr& scan_msg)
+    void ScanCallBack(const champion_nav_msgs::ChampionNavLaserScanPtr &scan_msg)
     {
         //转换到矫正需要的数据
         ros::Time startTime, endTime;
@@ -48,37 +46,35 @@ public:
         int beamNum = laserScanMsg.ranges.size();
         endTime = startTime + ros::Duration(laserScanMsg.time_increment * (beamNum - 1));
 
-        // 将数据复制出来
-        std::vector<double> angles,ranges;
-        for(int i = beamNum - 1; i > 0;i--)
-        {   
+        //将数据复制出来
+        std::vector<double> angles, ranges;
+        for (int i = beamNum - 1; i > 0; i--)
+        {
             double lidar_dist = laserScanMsg.ranges[i];
             double lidar_angle = laserScanMsg.angles[i];
 
-            if(lidar_dist < 0.05 || std::isnan(lidar_dist) || std::isinf(lidar_dist))
+            if (lidar_dist < 0.05 || std::isnan(lidar_dist) || std::isinf(lidar_dist))
                 lidar_dist = 0.0;
 
             ranges.push_back(lidar_dist);
             angles.push_back(lidar_angle);
         }
 
-        //转换为pcl::pointcloud for visuailization
-
-        tf::Stamped<tf::Pose> visualPose;
-        if(!getLaserPose(visualPose, startTime, tf_))
+        tf::Stamped<tf::Pose> visualPose; // laser在odom系下的位姿
+        if (!getLaserPose(visualPose, startTime, tf_))
         {
             ROS_WARN("Not visualPose,Can not Calib");
-            return ;
+            return;
         }
 
         double visualYaw = tf::getYaw(visualPose.getRotation());
 
         visual_cloud_.clear();
-        for(int i = 0; i < ranges.size();i++)
+        for (int i = 0; i < ranges.size(); i++)
         {
-            if(ranges[i] < 0.05 || std::isnan(ranges[i]) || std::isinf(ranges[i]))
+            if (ranges[i] < 0.05 || std::isnan(ranges[i]) || std::isinf(ranges[i]))
                 continue;
-            
+
             //将laser_frame下每个激光点的极坐标转换为直角坐标
             double x = ranges[i] * cos(angles[i]);
             double y = ranges[i] * sin(angles[i]);
@@ -89,25 +85,20 @@ public:
             pt.y = x * sin(visualYaw) + y * cos(visualYaw) + visualPose.getOrigin().getY();
             pt.z = 1.0;
 
-            // pack r/g/b into rgb
-            unsigned char r = 255, g = 0, b = 0;    //red color
+            unsigned char r = 255, g = 0, b = 0; // 原始点云：红色
             unsigned int rgb = ((unsigned int)r << 16 | (unsigned int)g << 8 | (unsigned int)b);
-            pt.rgb = *reinterpret_cast<float*>(&rgb);
+            pt.rgb = *reinterpret_cast<float *>(&rgb);
 
             visual_cloud_.push_back(pt);
         }
 
         //进行矫正
-        Lidar_Calibration(ranges,angles,
-                          startTime,
-                          endTime,
-                          tf_);
+        Lidar_Calibration(ranges, angles, startTime, endTime, tf_);
 
         //转换为pcl::pointcloud for visuailization
-        for(int i = 0; i < ranges.size();i++)
+        for (int i = 0; i < ranges.size(); i++)
         {
-
-            if(ranges[i] < 0.05 || std::isnan(ranges[i]) || std::isinf(ranges[i]))
+            if (ranges[i] < 0.05 || std::isnan(ranges[i]) || std::isinf(ranges[i]))
                 continue;
 
             double x = ranges[i] * cos(angles[i]);
@@ -118,17 +109,15 @@ public:
             pt.y = x * sin(visualYaw) + y * cos(visualYaw) + visualPose.getOrigin().getY();
             pt.z = 1.0;
 
-            unsigned char r = 0, g = 255, b = 0;    // green color
+            unsigned char r = 0, g = 255, b = 0; //矫正后点云：绿色
             unsigned int rgb = ((unsigned int)r << 16 | (unsigned int)g << 8 | (unsigned int)b);
-            pt.rgb = *reinterpret_cast<float*>(&rgb);
+            pt.rgb = *reinterpret_cast<float *>(&rgb);
 
             visual_cloud_.push_back(pt);
         }
-        // std::cout <<"get the new data!!"<<std::endl;
-        //进行显示
-         g_PointCloudView.showCloud(visual_cloud_.makeShared());
+        
+        g_PointCloudView.showCloud(visual_cloud_.makeShared()); //显示
     }
-
 
     /**
      * @name getLaserPose()
@@ -140,36 +129,36 @@ public:
     */
     bool getLaserPose(tf::Stamped<tf::Pose> &odom_pose,
                       ros::Time dt,
-                      tf::TransformListener * tf_)
+                      tf::TransformListener *tf_)
     {
         odom_pose.setIdentity();
 
-        tf::Stamped < tf::Pose > robot_pose;
+        tf::Stamped<tf::Pose> robot_pose;
         robot_pose.setIdentity();
         robot_pose.frame_id_ = "base_laser";
-        robot_pose.stamp_ = dt;   //设置为ros::Time()表示返回最近的转换关系
+        robot_pose.stamp_ = dt; //设置为ros::Time()表示返回最近的转换关系
 
         // get the global pose of the robot
         try
         {
-            if(!tf_->waitForTransform("/odom", "/base_laser", dt, ros::Duration(0.5)))             // 0.15s 的时间可以修改
+            if (!tf_->waitForTransform("/odom", "/base_laser", dt, ros::Duration(0.5)))
             {
                 ROS_ERROR("LidarMotion-Can not Wait Transform()");
                 return false;
             }
             tf_->transformPose("/odom", robot_pose, odom_pose);
         }
-        catch (tf::LookupException& ex)
+        catch (tf::LookupException &ex)
         {
             ROS_ERROR("LidarMotion: No Transform available Error looking up robot pose: %s\n", ex.what());
             return false;
         }
-        catch (tf::ConnectivityException& ex)
+        catch (tf::ConnectivityException &ex)
         {
             ROS_ERROR("LidarMotion: Connectivity Error looking up looking up robot pose: %s\n", ex.what());
             return false;
         }
-        catch (tf::ExtrapolationException& ex)
+        catch (tf::ExtrapolationException &ex)
         {
             ROS_ERROR("LidarMotion: Extrapolation Error looking up looking up robot pose: %s\n", ex.what());
             return false;
@@ -177,7 +166,6 @@ public:
 
         return true;
     }
-
 
     /**
      * @brief Lidar_MotionCalibration
@@ -192,15 +180,15 @@ public:
      * @param beam_number           本分段的激光点数量
      */
     void Lidar_MotionCalibration(
-            tf::Stamped<tf::Pose> frame_base_pose,
-            tf::Stamped<tf::Pose> frame_start_pose,
-            tf::Stamped<tf::Pose> frame_end_pose,
-            std::vector<double>& ranges,
-            std::vector<double>& angles,
-            int startIndex,
-            int& beam_number)
+        tf::Stamped<tf::Pose> frame_base_pose,
+        tf::Stamped<tf::Pose> frame_start_pose,
+        tf::Stamped<tf::Pose> frame_end_pose,
+        std::vector<double> &ranges,
+        std::vector<double> &angles,
+        int startIndex,
+        int &beam_number)
     {
-        
+
         //记录插值起点位姿
         double start_x = frame_start_pose.getOrigin().x();
         double start_y = frame_start_pose.getOrigin().y();
@@ -210,11 +198,11 @@ public:
         double end_y = frame_end_pose.getOrigin().y();
         double end_yaw = tf::getYaw(frame_end_pose.getRotation());
 
-        //每一段的收尾两点会赋值两次    
-        for(int i = startIndex; i < startIndex + beam_number; i++)
+        //每一段的收尾两点会赋值两次
+        for (int i = startIndex; i < startIndex + beam_number; i++)
         {
             double x = start_x + ((i - startIndex) / (beam_number - 1)) * (end_x - start_x);
-            double y = start_y + ((i - startIndex)  / (beam_number - 1)) * (end_y - start_y);
+            double y = start_y + ((i - startIndex) / (beam_number - 1)) * (end_y - start_y);
             double yaw = start_yaw + ((i - startIndex) / (beam_number - 1)) * (end_yaw - start_yaw);
 
             double x_tran = x - frame_base_pose.getOrigin().x();
@@ -228,15 +216,12 @@ public:
             //将laser_frame下每个激光点转换到以startTime时机器人位姿为原点的坐标系下
             laser_x = laser_x * cos(yaw_tran) - laser_y * sin(yaw_tran) + x_tran;
             laser_y = laser_x * sin(yaw_tran) + laser_y * cos(yaw_tran) + y_tran;
-            
+
             //将转换后的坐标封装为极坐标形式
-            ranges.at(i) = sqrt(pow(laser_x,2) + pow(laser_y,2));
-            angles.at(i) = atan2(laser_y,laser_x);
-           
+            ranges.at(i) = sqrt(pow(laser_x, 2) + pow(laser_y, 2));
+            angles.at(i) = atan2(laser_y, laser_x);
         }
     }
-
-
 
     //激光雷达数据　分段线性进行插值　分段的周期为10ms
     //这里会调用Lidar_MotionCalibration()
@@ -249,18 +234,18 @@ public:
      * @param endTime　最后一束激光的时间戳
      * @param *tf_
     */
-    void Lidar_Calibration(std::vector<double>& ranges,
-                           std::vector<double>& angles,
+    void Lidar_Calibration(std::vector<double> &ranges,
+                           std::vector<double> &angles,
                            ros::Time startTime,
                            ros::Time endTime,
-                           tf::TransformListener * tf_)
+                           tf::TransformListener *tf_)
     {
         //统计激光束的数量
         int beamNumber = ranges.size();
-        if(beamNumber != angles.size())
+        if (beamNumber != angles.size())
         {
             ROS_ERROR("Error:ranges not match to the angles");
-            return ;
+            return;
         }
 
         // 5ms来进行分段
@@ -283,35 +268,33 @@ public:
         //所有的激光点的基准位姿都会改成我们的base_pose
         // ROS_INFO("get start pose");
 
-        if(!getLaserPose(frame_start_pose, ros::Time(start_time /1000000.0), tf_))
+        if (!getLaserPose(frame_start_pose, ros::Time(start_time / 1000000.0), tf_))
         {
             ROS_WARN("Not Start Pose,Can not Calib");
-            return ;
+            return;
         }
 
-        if(!getLaserPose(frame_end_pose,ros::Time(end_time / 1000000.0),tf_))
+        if (!getLaserPose(frame_end_pose, ros::Time(end_time / 1000000.0), tf_))
         {
             ROS_WARN("Not End Pose, Can not Calib");
-            return ;
+            return;
         }
 
         int cnt = 0;
         //基准坐标就是第一个位姿的坐标
         frame_base_pose = frame_start_pose;
-        for(int i = 0; i < beamNumber; i++)
+        for (int i = 0; i < beamNumber; i++)
         {
             //分段线性,时间段的大小为interpolation_time_duration
             double mid_time = start_time + time_inc * (i - start_index);
-            if(mid_time - start_time > interpolation_time_duration || (i == beamNumber - 1))
+            if (mid_time - start_time > interpolation_time_duration || (i == beamNumber - 1))
             {
                 cnt++;
 
-                //得到起点和终点的位姿
-                //终点的位姿
-                if(!getLaserPose(frame_mid_pose, ros::Time(mid_time/1000000.0), tf_))
+                if (!getLaserPose(frame_mid_pose, ros::Time(mid_time / 1000000.0), tf_))
                 {
-                    ROS_ERROR("Mid %d Pose Error",cnt);
-                    return ;
+                    ROS_ERROR("Mid %d Pose Error", cnt);
+                    return;
                 }
 
                 //对当前的起点和终点进行插值
@@ -335,19 +318,16 @@ public:
     }
 
 public:
-    tf::TransformListener* tf_;
+    tf::TransformListener *tf_;
     ros::NodeHandle nh_;
     ros::Subscriber scan_sub_;
 
     pcl::PointCloud<pcl::PointXYZRGB> visual_cloud_;
 };
 
-
-
-
-int main(int argc,char ** argv)
+int main(int argc, char **argv)
 {
-    ros::init(argc,argv,"LidarMotionCalib");
+    ros::init(argc, argv, "LidarMotionCalib");
 
     tf::TransformListener tf(ros::Duration(10.0));
 
